@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import { gemini } from './services/geminiService';
 import { TranslationResult, TARGET_LANGUAGES, SessionHistoryItem, RiskLevel } from './types';
 import RiskBadge from './components/RiskBadge';
@@ -499,6 +500,7 @@ const App: React.FC = () => {
           SENTINELVOICE-PRO-v1.0
         </div>
       </footer>
+      <SpeedInsights />
     </div>
   );
 };
