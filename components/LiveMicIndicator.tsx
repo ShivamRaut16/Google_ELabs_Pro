@@ -7,14 +7,16 @@ interface LiveMicIndicatorProps {
 }
 
 const LiveMicIndicator: React.FC<LiveMicIndicatorProps> = ({ stream, isActive }) => {
-  const [volume, setVolume] = useState(0);
+  const [frequencyData, setFrequencyData] = useState<number[]>(new Array(7).fill(0));
+  const [peak, setPeak] = useState(0);
   const analyzerRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
     if (!isActive || !stream) {
-      setVolume(0);
+      setFrequencyData(new Array(7).fill(0));
+      setPeak(0);
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
       if (audioContextRef.current) audioContextRef.current.close();
       return;
@@ -24,29 +26,43 @@ const LiveMicIndicator: React.FC<LiveMicIndicatorProps> = ({ stream, isActive })
     audioContextRef.current = audioContext;
     const source = audioContext.createMediaStreamSource(stream);
     const analyzer = audioContext.createAnalyser();
-    analyzer.fftSize = 64; 
+    // Larger FFT size for better frequency resolution
+    analyzer.fftSize = 256; 
+    analyzer.smoothingTimeConstant = 0.6; // Smoother transitions
     source.connect(analyzer);
     analyzerRef.current = analyzer;
 
     const bufferLength = analyzer.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
 
-    const updateVolume = () => {
+    const update = () => {
       if (!analyzerRef.current) return;
       analyzerRef.current.getByteFrequencyData(dataArray);
       
-      let sum = 0;
-      for (let i = 0; i < bufferLength; i++) {
-        sum += dataArray[i];
+      // Map frequency bins to our 7 UI bars
+      // We focus on lower-to-mid frequencies where speech lives (roughly indices 0-60)
+      const barCount = 7;
+      const step = Math.floor(60 / barCount);
+      const newFrequencies = [];
+      let currentMax = 0;
+
+      for (let i = 0; i < barCount; i++) {
+        let sum = 0;
+        for (let j = 0; j < step; j++) {
+          sum += dataArray[i * step + j];
+        }
+        const val = sum / step / 255;
+        newFrequencies.push(val);
+        if (val > currentMax) currentMax = val;
       }
-      const average = sum / bufferLength;
-      const normalizedVolume = Math.min(1, average / 128);
-      setVolume(normalizedVolume);
+
+      setFrequencyData(newFrequencies);
+      setPeak(currentMax);
       
-      animationFrameRef.current = requestAnimationFrame(updateVolume);
+      animationFrameRef.current = requestAnimationFrame(update);
     };
 
-    updateVolume();
+    update();
 
     return () => {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
@@ -58,31 +74,35 @@ const LiveMicIndicator: React.FC<LiveMicIndicatorProps> = ({ stream, isActive })
 
   return (
     <>
-      {/* Primary Dynamic Glow */}
+      {/* Primary Dynamic Glow - Responds to overall peak volume */}
       <div 
         className="absolute inset-0 rounded-full transition-all duration-75 pointer-events-none z-0"
         style={{ 
-          boxShadow: `0 0 ${30 + volume * 80}px rgba(225, 29, 72, ${0.2 + volume * 0.5}), 0 0 ${15 + volume * 40}px rgba(99, 102, 241, ${0.1 + volume * 0.3})`,
-          transform: `scale(${1 + volume * 0.2})`,
-          opacity: 0.6 + volume * 0.4
+          boxShadow: `0 0 ${40 + peak * 100}px rgba(225, 29, 72, ${0.1 + peak * 0.6}), 0 0 ${20 + peak * 60}px rgba(99, 102, 241, ${0.1 + peak * 0.4})`,
+          transform: `scale(${1 + peak * 0.25})`,
+          opacity: 0.5 + peak * 0.5
         }}
       />
       
-      {/* Floating Orbital Glows */}
+      {/* Floating Orbital Glow - Reacts to energy */}
       <div 
-        className="absolute inset-0 rounded-full border border-rose-500/20 blur-sm transition-all duration-100 ease-out"
-        style={{ transform: `scale(${1.2 + volume * 0.4})`, opacity: volume * 0.5 }}
+        className="absolute inset-0 rounded-full border border-rose-500/30 blur-md transition-all duration-100 ease-out"
+        style={{ 
+          transform: `scale(${1.1 + peak * 0.5}) rotate(${peak * 45}deg)`, 
+          opacity: 0.1 + peak * 0.6 
+        }}
       />
       
-      {/* Responsive Waveform indicator at bottom */}
-      <div className="absolute -bottom-14 flex items-end gap-1.5 h-10">
-        {[...Array(7)].map((_, i) => (
+      {/* Responsive Spectrum Waveform at bottom */}
+      <div className="absolute -bottom-16 flex items-end gap-2 h-14">
+        {frequencyData.map((val, i) => (
           <div 
             key={i}
-            className="w-1.5 bg-gradient-to-t from-rose-600 to-rose-400 rounded-full transition-all duration-75"
+            className="w-2 bg-gradient-to-t from-rose-600 via-rose-400 to-indigo-400 rounded-full transition-all duration-100 ease-out"
             style={{ 
-              height: `${15 + (Math.sin(Date.now() / 200 + i) * 10) + (volume * 85 * (1 - Math.abs(i-3)/4))}%`,
-              opacity: 0.2 + volume * 0.8
+              height: `${10 + val * 90}%`,
+              opacity: 0.3 + val * 0.7,
+              boxShadow: val > 0.7 ? `0 0 10px rgba(225, 29, 72, ${val})` : 'none'
             }}
           />
         ))}
