@@ -1,10 +1,12 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { gemini } from './services/geminiService';
 import { TranslationResult, TARGET_LANGUAGES, SessionHistoryItem, RiskLevel } from './types';
 import RiskBadge from './components/RiskBadge';
 import SafetyWarning from './components/SafetyWarning';
 import SettingsPanel from './components/SettingsPanel';
+import LiveMicIndicator from './components/LiveMicIndicator';
+import MiniWaveform from './components/MiniWaveform';
 
 const App: React.FC = () => {
   const [isRecording, setIsRecording] = useState(false);
@@ -17,6 +19,10 @@ const App: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [selectedDeviceId, setSelectedDeviceId] = useState('');
   const [sensitivity, setSensitivity] = useState(50);
+
+  // Filter state
+  const [filterLang, setFilterLang] = useState<string>('All');
+  const [filterRisk, setFilterRisk] = useState<string>('All');
   
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -134,6 +140,32 @@ const App: React.FC = () => {
     }
   };
 
+  const clearHistory = () => {
+    if (window.confirm("Clear all session history?")) {
+      setHistory([]);
+    }
+  };
+
+  const resetFilters = () => {
+    setFilterLang('All');
+    setFilterRisk('All');
+  };
+
+  const uniqueLanguages = useMemo(() => {
+    const langs = new Set(history.map(item => item.result.detected_language));
+    return Array.from(langs).sort();
+  }, [history]);
+
+  const filteredHistory = useMemo(() => {
+    return history.filter(item => {
+      const matchesLang = filterLang === 'All' || item.result.detected_language === filterLang;
+      const matchesRisk = filterRisk === 'All' || item.result.evaluation.risk_level === filterRisk;
+      return matchesLang && matchesRisk;
+    });
+  }, [history, filterLang, filterRisk]);
+
+  const filtersActive = filterLang !== 'All' || filterRisk !== 'All';
+
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col text-slate-200">
       <header className="glass-panel sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
@@ -147,6 +179,12 @@ const App: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-4">
+          {isRecording && (
+            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-rose-500/10 border border-rose-500/30 rounded-full animate-pulse mr-2">
+              <span className="w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(225,29,72,0.8)]"></span>
+              <span className="text-[10px] font-black text-rose-400 uppercase tracking-[0.1em]">Live REC</span>
+            </div>
+          )}
           <select 
             value={targetLang} 
             onChange={(e) => setTargetLang(e.target.value)}
@@ -176,6 +214,8 @@ const App: React.FC = () => {
           </div>
 
           <div className="relative group flex items-center justify-center h-48 w-48">
+            <LiveMicIndicator stream={streamRef.current} isActive={isRecording} />
+            
             <button
               onMouseDown={startRecording}
               onMouseUp={stopRecording}
@@ -185,54 +225,122 @@ const App: React.FC = () => {
               disabled={isProcessing}
               className={`relative z-10 w-32 h-32 rounded-full flex items-center justify-center transition-all duration-300 shadow-2xl ${
                 isRecording 
-                ? 'bg-rose-600 scale-110 shadow-[0_0_30px_rgba(225,29,72,0.6)]' 
+                ? 'bg-rose-600 scale-110 shadow-inner animate-[pulse_2s_cubic-bezier(0.4,0,0.6,1)_infinite]' 
                 : 'bg-indigo-600 hover:bg-indigo-500 hover:scale-105 shadow-indigo-600/40'
               } ${isProcessing ? 'opacity-50 cursor-not-allowed grayscale' : ''}`}
             >
               {isProcessing ? (
                 <i className="fas fa-spinner fa-spin text-5xl"></i>
               ) : isRecording ? (
-                <div className="flex items-center gap-1 h-8">
-                  <div className="w-1 bg-white h-full animate-[bounce_0.6s_infinite] [animation-delay:-0.4s]"></div>
-                  <div className="w-1 bg-white h-3/4 animate-[bounce_0.6s_infinite] [animation-delay:-0.2s]"></div>
-                  <div className="w-1 bg-white h-full animate-[bounce_0.6s_infinite]"></div>
-                  <div className="w-1 bg-white h-3/4 animate-[bounce_0.6s_infinite] [animation-delay:-0.2s]"></div>
-                  <div className="w-1 bg-white h-full animate-[bounce_0.6s_infinite] [animation-delay:-0.4s]"></div>
+                <div className="flex items-center gap-1.5 h-10">
+                  <div className="w-1.5 bg-white h-full animate-[bounce_0.6s_infinite] [animation-delay:-0.4s] rounded-full"></div>
+                  <div className="w-1.5 bg-white h-3/4 animate-[bounce_0.6s_infinite] [animation-delay:-0.2s] rounded-full"></div>
+                  <div className="w-1.5 bg-white h-full animate-[bounce_0.6s_infinite] rounded-full"></div>
+                  <div className="w-1.5 bg-white h-3/4 animate-[bounce_0.6s_infinite] [animation-delay:-0.2s] rounded-full"></div>
+                  <div className="w-1.5 bg-white h-full animate-[bounce_0.6s_infinite] [animation-delay:-0.4s] rounded-full"></div>
                 </div>
               ) : (
                 <i className="fas fa-microphone text-5xl"></i>
               )}
             </button>
             
-            {/* Visual ripple effect when recording */}
+            {/* Base pulse ring as fallback/extra layer */}
             {isRecording && (
-              <>
-                <div className="absolute inset-0 w-full h-full rounded-full border-2 border-rose-500/40 pulse-ring animate-[pulse_1.5s_linear_infinite]"></div>
-                <div className="absolute inset-0 w-full h-full rounded-full border-2 border-rose-500/30 pulse-ring animate-[pulse_2s_linear_infinite_0.5s]"></div>
-                <div className="absolute inset-0 w-full h-full rounded-full border-2 border-rose-500/20 pulse-ring animate-[pulse_2.5s_linear_infinite_1s]"></div>
-              </>
+              <div className="absolute inset-0 w-full h-full rounded-full border-4 border-rose-500/20 pulse-ring animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]"></div>
             )}
           </div>
 
-          <div className="w-full max-w-lg min-h-[2.5rem] flex flex-col items-center justify-center">
+          <div className="w-full max-w-lg min-h-[2.5rem] flex flex-col items-center justify-center mt-6">
             {isRecording && (
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
-                <p className="text-rose-400 text-sm font-bold tracking-widest uppercase">Recording Active</p>
+              <div className="flex flex-col items-center gap-2">
+                <div className="flex items-center gap-3 px-4 py-2 bg-rose-500/10 border border-rose-500/20 rounded-full">
+                  <MiniWaveform stream={streamRef.current} isActive={isRecording} />
+                  <p className="text-rose-400 text-xs font-black tracking-[0.2em] uppercase">Recording Active</p>
+                  <MiniWaveform stream={streamRef.current} isActive={isRecording} />
+                </div>
+                <span className="text-[10px] text-slate-500 font-bold tracking-wider animate-pulse uppercase">Release to Analyze</span>
               </div>
             )}
-            {isProcessing && <p className="text-indigo-400 text-sm font-medium">Analyzing emotion, context & safety...</p>}
+            {isProcessing && (
+              <div className="flex items-center gap-2">
+                <i className="fas fa-brain text-indigo-400 animate-pulse"></i>
+                <p className="text-indigo-400 text-sm font-medium">Analyzing emotion, context & safety...</p>
+              </div>
+            )}
             {error && <p className="text-rose-400 text-xs mt-2 font-medium bg-rose-500/10 p-2 px-4 rounded-lg border border-rose-500/20">{error}</p>}
           </div>
         </section>
 
         <section className="flex flex-col gap-4 mb-20">
-          <div className="flex items-center justify-between px-2">
-            <h3 className="text-lg font-bold flex items-center gap-2">
-              <i className="fas fa-history text-slate-500"></i>
-              Session Insights
-            </h3>
-            <span className="text-xs text-slate-500 uppercase tracking-widest font-mono">{history.length} RECORDS</span>
+          <div className="flex flex-col gap-4 px-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-bold flex items-center gap-2">
+                <i className="fas fa-history text-slate-500"></i>
+                Session Insights
+              </h3>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-500 uppercase tracking-widest font-mono">
+                  {filteredHistory.length} / {history.length} ITEMS
+                </span>
+                {history.length > 0 && (
+                  <button 
+                    onClick={clearHistory}
+                    className="p-1.5 px-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-[10px] font-bold uppercase rounded-lg border border-rose-500/20 transition-all flex items-center gap-2"
+                  >
+                    <i className="fas fa-trash-can text-[9px]"></i>
+                    Clear History
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {history.length > 0 && (
+              <div className="flex flex-wrap items-end gap-4 py-4 px-4 bg-slate-900/40 rounded-2xl border border-slate-800/50">
+                <div className="flex flex-col gap-1.5 min-w-[140px]">
+                  <span className="text-[10px] text-slate-500 uppercase font-bold tracking-widest px-1 flex items-center gap-1.5">
+                    <i className="fas fa-earth-americas text-[9px]"></i>
+                    Source Language
+                  </span>
+                  <select 
+                    value={filterLang}
+                    onChange={(e) => setFilterLang(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-xl p-2.5 outline-none focus:ring-1 focus:ring-indigo-500 transition-all cursor-pointer hover:border-slate-700"
+                  >
+                    <option value="All">All Languages</option>
+                    {uniqueLanguages.map(lang => (
+                      <option key={lang} value={lang}>{lang}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div className="flex flex-col gap-1.5 min-w-[140px]">
+                  <span className="text-[10px] text-slate-500 uppercase font-bold tracking-widest px-1 flex items-center gap-1.5">
+                    <i className="fas fa-shield-virus text-[9px]"></i>
+                    Risk Profile
+                  </span>
+                  <select 
+                    value={filterRisk}
+                    onChange={(e) => setFilterRisk(e.target.value)}
+                    className="bg-slate-950 border border-slate-800 text-slate-300 text-xs rounded-xl p-2.5 outline-none focus:ring-1 focus:ring-indigo-500 transition-all cursor-pointer hover:border-slate-700"
+                  >
+                    <option value="All">All Risk Levels</option>
+                    <option value={RiskLevel.LOW}>Low Risk</option>
+                    <option value={RiskLevel.MEDIUM}>Medium Risk</option>
+                    <option value={RiskLevel.HIGH}>High Risk</option>
+                  </select>
+                </div>
+
+                {filtersActive && (
+                  <button 
+                    onClick={resetFilters}
+                    className="h-[38px] px-4 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-[10px] font-bold uppercase rounded-xl border border-indigo-500/20 transition-all flex items-center gap-2"
+                  >
+                    <i className="fas fa-filter-circle-xmark"></i>
+                    Reset Filters
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {history.length === 0 ? (
@@ -240,115 +348,131 @@ const App: React.FC = () => {
               <i className="fas fa-wave-square text-8xl mb-4"></i>
               <p className="text-xl">Your conversation history will appear here.</p>
             </div>
+          ) : filteredHistory.length === 0 ? (
+            <div className="text-center py-24 glass-panel rounded-3xl border-dashed border-slate-700">
+              <div className="w-16 h-16 bg-slate-900 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-800">
+                <i className="fas fa-filter-circle-xmark text-slate-600 text-2xl"></i>
+              </div>
+              <p className="text-slate-400 font-medium">No records match your filters.</p>
+              <p className="text-slate-600 text-xs mt-1">Try adjusting the language or risk profile settings.</p>
+              <button 
+                onClick={resetFilters}
+                className="mt-6 text-xs font-bold text-indigo-400 hover:text-indigo-300 underline underline-offset-4 decoration-indigo-500/30"
+              >
+                Clear all filters
+              </button>
+            </div>
           ) : (
-            history.map((item) => (
-              <div key={item.id} className="glass-panel rounded-2xl p-6 flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500 hover:border-slate-600 transition-colors">
-                <div className="flex justify-between items-start">
-                  <div className="flex flex-col gap-1">
-                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest flex items-center gap-1">
-                      <i className="fas fa-earth-americas"></i>
-                      {item.result.detected_language} ➞ {targetLang}
-                    </span>
-                    <p className="text-slate-200 font-medium italic opacity-70">"{item.userInput}"</p>
-                  </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <RiskBadge level={item.result.evaluation.risk_level} />
-                    <span className="text-[10px] text-slate-500 font-mono">
-                      {item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="h-px bg-slate-800"></div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                      <i className="fas fa-language"></i>
-                      Translation
-                    </h4>
-                    <div className="bg-slate-900/80 p-5 rounded-2xl border border-slate-800 shadow-inner">
-                      <p className="text-xl text-indigo-300 font-semibold leading-relaxed">{item.result.translation.translated_text}</p>
-                      {item.result.translation.alternate_meanings.length > 0 && (
-                        <div className="mt-3 pt-3 border-t border-slate-800/50">
-                          <p className="text-[10px] text-slate-500 font-bold uppercase mb-2 tracking-wide">Contextual Options</p>
-                          <ul className="text-xs text-slate-400 space-y-1">
-                            {item.result.translation.alternate_meanings.map((m, i) => (
-                              <li key={i} className="flex items-start gap-2">
-                                <span className="text-indigo-500">•</span>
-                                {m}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
+            <div className="flex flex-col gap-4">
+              {filteredHistory.map((item) => (
+                <div key={item.id} className="glass-panel rounded-2xl p-6 flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500 hover:border-slate-600 transition-colors">
+                  <div className="flex justify-between items-start">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest flex items-center gap-1">
+                        <i className="fas fa-earth-americas"></i>
+                        {item.result.detected_language} ➞ {targetLang}
+                      </span>
+                      <p className="text-slate-200 font-medium italic opacity-70">"{item.userInput}"</p>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      <RiskBadge level={item.result.evaluation.risk_level} />
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        {item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </span>
                     </div>
                   </div>
 
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                      <i className="fas fa-magnifying-glass-chart"></i>
-                      Analysis
-                    </h4>
-                    <div className="space-y-4">
-                      <div className="flex flex-col gap-2">
-                        <div className="flex justify-between items-center text-xs">
-                          <span className="text-slate-400 font-bold uppercase tracking-tighter">Certainty</span>
-                          <span className="font-mono text-indigo-400 font-bold">{item.result.evaluation.confidence_score}%</span>
-                        </div>
-                        <div className="w-full bg-slate-800 rounded-full h-2">
-                          <div 
-                            className="bg-indigo-500 h-2 rounded-full transition-all duration-1000 shadow-[0_0_10px_rgba(99,102,241,0.5)]" 
-                            style={{ width: `${item.result.evaluation.confidence_score}%` }}
-                          ></div>
-                        </div>
-                      </div>
-                      <div className="bg-slate-900/40 p-3 rounded-xl border border-slate-800/50">
-                        <p className="text-xs font-bold text-slate-500 mb-1 uppercase tracking-widest">Reasoning</p>
-                        <p className="text-xs text-slate-300 leading-relaxed italic">
-                          "{item.result.evaluation.risk_reason}"
-                        </p>
-                        {item.result.evaluation.risk_level === RiskLevel.HIGH && (
-                          <div className="mt-2 pt-2 border-t border-slate-800/50 flex items-start gap-2">
-                            <i className="fas fa-triangle-exclamation text-rose-500 text-[10px] mt-1"></i>
-                            <p className="text-[10px] text-rose-400 font-medium">
-                              {item.result.evaluation.potential_harm}
-                            </p>
+                  <div className="h-px bg-slate-800"></div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <i className="fas fa-language"></i>
+                        Translation
+                      </h4>
+                      <div className="bg-slate-900/80 p-5 rounded-2xl border border-slate-800 shadow-inner">
+                        <p className="text-xl text-indigo-300 font-semibold leading-relaxed">{item.result.translation.translated_text}</p>
+                        {item.result.translation.alternate_meanings.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-slate-800/50">
+                            <p className="text-[10px] text-slate-500 font-bold uppercase mb-2 tracking-wide">Contextual Options</p>
+                            <ul className="text-xs text-slate-400 space-y-1">
+                              {item.result.translation.alternate_meanings.map((m, i) => (
+                                <li key={i} className="flex items-start gap-2">
+                                  <span className="text-indigo-500">•</span>
+                                  {m}
+                                </li>
+                              ))}
+                            </ul>
                           </div>
                         )}
                       </div>
                     </div>
+
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <i className="fas fa-magnifying-glass-chart"></i>
+                        Analysis
+                      </h4>
+                      <div className="space-y-4">
+                        <div className="flex flex-col gap-2">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-slate-400 font-bold uppercase tracking-tighter">Certainty</span>
+                            <span className="font-mono text-indigo-400 font-bold">{item.result.evaluation.confidence_score}%</span>
+                          </div>
+                          <div className="w-full bg-slate-800 rounded-full h-2">
+                            <div 
+                              className="bg-indigo-500 h-2 rounded-full transition-all duration-1000 shadow-[0_0_10px_rgba(99,102,241,0.5)]" 
+                              style={{ width: `${item.result.evaluation.confidence_score}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                        <div className="bg-slate-900/40 p-3 rounded-xl border border-slate-800/50">
+                          <p className="text-xs font-bold text-slate-500 mb-1 uppercase tracking-widest">Reasoning</p>
+                          <p className="text-xs text-slate-300 leading-relaxed italic">
+                            "{item.result.evaluation.risk_reason}"
+                          </p>
+                          {item.result.evaluation.risk_level === RiskLevel.HIGH && (
+                            <div className="mt-2 pt-2 border-t border-slate-800/50 flex items-start gap-2">
+                              <i className="fas fa-triangle-exclamation text-rose-500 text-[10px] mt-1"></i>
+                              <p className="text-[10px] text-rose-400 font-medium">
+                                {item.result.evaluation.potential_harm}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {item.result.safety.should_warn_user && (
+                    <SafetyWarning 
+                      message={item.result.safety.safety_message} 
+                      level={item.result.evaluation.risk_level} 
+                    />
+                  )}
+
+                  <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-800/20">
+                    <div className="flex items-center gap-4 text-[10px] text-slate-500 uppercase font-bold tracking-tighter">
+                      <span className="flex items-center gap-1.5 bg-slate-900 px-2 py-1 rounded">
+                        <i className="fas fa-volume-high text-indigo-500"></i>
+                        {item.result.voice_policy.voice_tone}
+                      </span>
+                      <span className="flex items-center gap-1.5 bg-slate-900 px-2 py-1 rounded">
+                        <i className="fas fa-gauge-high text-emerald-500"></i>
+                        {item.result.voice_policy.speaking_speed}
+                      </span>
+                    </div>
+                    <button 
+                      onClick={() => handleSpeak(item.result)}
+                      className="flex items-center gap-2 px-4 py-2 bg-indigo-600/10 hover:bg-indigo-600/20 border border-indigo-500/20 rounded-xl text-xs font-bold text-indigo-400 transition-all hover:scale-105 active:scale-95"
+                    >
+                      <i className="fas fa-play"></i>
+                      Replay Audio
+                    </button>
                   </div>
                 </div>
-
-                {item.result.safety.should_warn_user && (
-                  <SafetyWarning 
-                    message={item.result.safety.safety_message} 
-                    level={item.result.evaluation.risk_level} 
-                  />
-                )}
-
-                <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-800/20">
-                  <div className="flex items-center gap-4 text-[10px] text-slate-500 uppercase font-bold tracking-tighter">
-                    <span className="flex items-center gap-1.5 bg-slate-900 px-2 py-1 rounded">
-                      <i className="fas fa-volume-high text-indigo-500"></i>
-                      {item.result.voice_policy.voice_tone}
-                    </span>
-                    <span className="flex items-center gap-1.5 bg-slate-900 px-2 py-1 rounded">
-                      <i className="fas fa-gauge-high text-emerald-500"></i>
-                      {item.result.voice_policy.speaking_speed}
-                    </span>
-                  </div>
-                  <button 
-                    onClick={() => handleSpeak(item.result)}
-                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600/10 hover:bg-indigo-600/20 border border-indigo-500/20 rounded-xl text-xs font-bold text-indigo-400 transition-all hover:scale-105 active:scale-95"
-                  >
-                    <i className="fas fa-play"></i>
-                    Replay Audio
-                  </button>
-                </div>
-              </div>
-            ))
+              ))}
+            </div>
           )}
         </section>
       </main>
