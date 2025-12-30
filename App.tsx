@@ -14,6 +14,7 @@ const App: React.FC = () => {
   const [targetLang, setTargetLang] = useState('English');
   const [history, setHistory] = useState<SessionHistoryItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [recordingDuration, setRecordingDuration] = useState(0);
   
   // Settings state
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -28,6 +29,21 @@ const App: React.FC = () => {
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const timerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (isRecording) {
+      setRecordingDuration(0);
+      timerRef.current = window.setInterval(() => {
+        setRecordingDuration(prev => prev + 1);
+      }, 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [isRecording]);
 
   const startRecording = async () => {
     setError(null);
@@ -41,12 +57,10 @@ const App: React.FC = () => {
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
 
-      // Create an internal audio graph to apply gain (sensitivity)
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       const source = audioContext.createMediaStreamSource(stream);
       const gainNode = audioContext.createGain();
       
-      // Sensitivity 50 is gain 1.0. 100 is gain 2.0. 0 is gain 0.0.
       gainNode.gain.value = (sensitivity / 50);
       
       const destination = audioContext.createMediaStreamDestination();
@@ -166,6 +180,12 @@ const App: React.FC = () => {
 
   const filtersActive = filterLang !== 'All' || filterRisk !== 'All';
 
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col text-slate-200">
       <header className="glass-panel sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
@@ -182,7 +202,7 @@ const App: React.FC = () => {
           {isRecording && (
             <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-rose-500/10 border border-rose-500/30 rounded-full animate-pulse mr-2">
               <span className="w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(225,29,72,0.8)]"></span>
-              <span className="text-[10px] font-black text-rose-400 uppercase tracking-[0.1em]">Live REC</span>
+              <span className="text-[10px] font-black text-rose-400 uppercase tracking-[0.1em]">Live REC • {formatTime(recordingDuration)}</span>
             </div>
           )}
           <select 
@@ -225,46 +245,62 @@ const App: React.FC = () => {
               disabled={isProcessing}
               className={`relative z-10 w-32 h-32 rounded-full flex items-center justify-center transition-all duration-300 shadow-2xl ${
                 isRecording 
-                ? 'bg-rose-600 scale-110 shadow-inner animate-[pulse_2s_cubic-bezier(0.4,0,0.6,1)_infinite]' 
-                : 'bg-indigo-600 hover:bg-indigo-500 hover:scale-105 shadow-indigo-600/40'
+                ? 'bg-rose-600 scale-110 shadow-[0_0_60px_rgba(225,29,72,0.4)] intense-mic-pulse border-4 border-rose-400/20' 
+                : 'bg-indigo-600 hover:bg-indigo-500 hover:scale-105 shadow-indigo-600/40 border-4 border-white/5'
               } ${isProcessing ? 'opacity-50 cursor-not-allowed grayscale' : ''}`}
             >
               {isProcessing ? (
                 <i className="fas fa-spinner fa-spin text-5xl"></i>
               ) : isRecording ? (
-                <div className="flex items-center gap-1.5 h-10">
-                  <div className="w-1.5 bg-white h-full animate-[bounce_0.6s_infinite] [animation-delay:-0.4s] rounded-full"></div>
-                  <div className="w-1.5 bg-white h-3/4 animate-[bounce_0.6s_infinite] [animation-delay:-0.2s] rounded-full"></div>
-                  <div className="w-1.5 bg-white h-full animate-[bounce_0.6s_infinite] rounded-full"></div>
-                  <div className="w-1.5 bg-white h-3/4 animate-[bounce_0.6s_infinite] [animation-delay:-0.2s] rounded-full"></div>
-                  <div className="w-1.5 bg-white h-full animate-[bounce_0.6s_infinite] [animation-delay:-0.4s] rounded-full"></div>
+                <div className="flex flex-col items-center gap-2">
+                   <div className="flex items-center gap-1.5 h-10">
+                    <div className="w-1.5 bg-white h-full animate-[bounce_0.6s_infinite] [animation-delay:-0.4s] rounded-full"></div>
+                    <div className="w-1.5 bg-white h-3/4 animate-[bounce_0.6s_infinite] [animation-delay:-0.2s] rounded-full"></div>
+                    <div className="w-1.5 bg-white h-full animate-[bounce_0.6s_infinite] rounded-full"></div>
+                    <div className="w-1.5 bg-white h-3/4 animate-[bounce_0.6s_infinite] [animation-delay:-0.2s] rounded-full"></div>
+                    <div className="w-1.5 bg-white h-full animate-[bounce_0.6s_infinite] [animation-delay:-0.4s] rounded-full"></div>
+                  </div>
+                  <span className="text-[10px] font-bold text-white/80 tracking-widest">{formatTime(recordingDuration)}</span>
                 </div>
               ) : (
                 <i className="fas fa-microphone text-5xl"></i>
               )}
             </button>
             
-            {/* Base pulse ring as fallback/extra layer */}
             {isRecording && (
-              <div className="absolute inset-0 w-full h-full rounded-full border-4 border-rose-500/20 pulse-ring animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]"></div>
+              <>
+                <div className="absolute inset-0 w-full h-full rounded-full border-4 border-rose-500/20 pulse-ring animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]"></div>
+                <div className="absolute inset-0 w-full h-full rounded-full border-2 border-rose-500/10 pulse-ring animate-[ping_3s_cubic-bezier(0,0,0.2,1)_infinite_0.5s]"></div>
+              </>
             )}
           </div>
 
           <div className="w-full max-w-lg min-h-[2.5rem] flex flex-col items-center justify-center mt-6">
             {isRecording && (
               <div className="flex flex-col items-center gap-2">
-                <div className="flex items-center gap-3 px-4 py-2 bg-rose-500/10 border border-rose-500/20 rounded-full">
+                <div className="flex items-center gap-4 px-5 py-3 bg-rose-500/10 border border-rose-500/30 rounded-2xl shadow-[0_0_25px_rgba(225,29,72,0.15)] animate-in fade-in zoom-in duration-300">
                   <MiniWaveform stream={streamRef.current} isActive={isRecording} />
-                  <p className="text-rose-400 text-xs font-black tracking-[0.2em] uppercase">Recording Active</p>
+                  <div className="flex flex-col items-center">
+                    <p className="text-rose-400 text-[10px] font-black tracking-[0.4em] uppercase mb-1">Recording Session</p>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shadow-[0_0_8px_rgba(225,29,72,0.8)]"></span>
+                      <span className="text-slate-200 font-mono text-lg font-bold tracking-tighter">{formatTime(recordingDuration)}</span>
+                    </div>
+                  </div>
                   <MiniWaveform stream={streamRef.current} isActive={isRecording} />
                 </div>
-                <span className="text-[10px] text-slate-500 font-bold tracking-wider animate-pulse uppercase">Release to Analyze</span>
+                <span className="text-[10px] text-slate-500 font-bold tracking-[0.2em] animate-bounce uppercase mt-3">Release Button to Analyze Input</span>
               </div>
             )}
             {isProcessing && (
-              <div className="flex items-center gap-2">
-                <i className="fas fa-brain text-indigo-400 animate-pulse"></i>
-                <p className="text-indigo-400 text-sm font-medium">Analyzing emotion, context & safety...</p>
+              <div className="flex flex-col items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <i className="fas fa-brain text-indigo-400 animate-pulse text-xl"></i>
+                  <p className="text-indigo-400 text-sm font-medium">Synthesizing Contextual Safe-Translation...</p>
+                </div>
+                <div className="w-48 h-1 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-indigo-500 animate-[loading_1.5s_infinite] origin-left shadow-[0_0_8px_rgba(99,102,241,0.5)]"></div>
+                </div>
               </div>
             )}
             {error && <p className="text-rose-400 text-xs mt-2 font-medium bg-rose-500/10 p-2 px-4 rounded-lg border border-rose-500/20">{error}</p>}
@@ -499,6 +535,21 @@ const App: React.FC = () => {
           SENTINELVOICE-PRO-v1.0
         </div>
       </footer>
+      <style>{`
+        @keyframes loading {
+          0% { transform: scaleX(0); }
+          50% { transform: scaleX(1); }
+          100% { transform: scaleX(0); transform-origin: right; }
+        }
+        @keyframes intense-mic-pulse {
+          0% { transform: scale(1.1); box-shadow: 0 0 0 0 rgba(225, 29, 72, 0.6); }
+          70% { transform: scale(1.18); box-shadow: 0 0 0 25px rgba(225, 29, 72, 0); }
+          100% { transform: scale(1.1); box-shadow: 0 0 0 0 rgba(225, 29, 72, 0); }
+        }
+        .intense-mic-pulse {
+          animation: intense-mic-pulse 1.5s infinite cubic-bezier(0.4, 0, 0.2, 1);
+        }
+      `}</style>
     </div>
   );
 };
