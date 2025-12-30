@@ -1,0 +1,7 @@
+{
+  "name": "SentinelVoice AI",
+  "description": "A responsible, multilingual, voice-first AI bridge powered by Gemini. It prioritizes accuracy and safety through meaning-preserving translation and risk evaluation.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
